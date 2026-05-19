@@ -99,37 +99,31 @@ app.post('/api/users', async (req, res) => {
 });
 
 
-// 🟢 مسار جلب الكتب الصحيح والمعدل لمنع الشاشة البيضاء والتعليق نهائياً
-// 🟢 المسار الصحيح والمطابق تماماً لكود الواجهة (React) تبعك
-app.get('/api/contents/search', async (req, res) => {
+// Get all content items
+// 🟢 تم التعديل هنا: مسار جلب الكتب المطور الذي يدعم البحث الذكي والعميق لمنع فرشة الكود
+app.get('/api/contents', async (req, res) => {
   try {
-    const searchQuery = req.query.query; // لقط المتغير باسم query متل كود الـ fetch بالظبط
+    const { search } = req.query; // لقط كلمة البحث القادمة من الواجهة الأمامية
     let filter = {};
 
-    if (searchQuery) {
+    // إذا قامت الواجهة بإرسال نص بداخل خانة البحث، نقوم بتفعيل الفلترة المتقدمة
+    if (search) {
       filter = {
         $or: [
-          { title: { $regex: searchQuery, $options: 'i' } },    // بحث بالعنوان
-          { author: { $regex: searchQuery, $options: 'i' } },   // بحث بالمؤلف
-          { subCategory: { $regex: searchQuery, $options: 'i' } } // بحث بالقسم
+          { title: { $regex: search, $options: 'i' } },       // البحث بداخل عنوان الكتاب
+          { author: { $regex: search, $options: 'i' } },      // البحث بداخل اسم المؤلف
+          { subCategory: { $regex: search, $options: 'i' } }   // البحث بداخل القسم الفرعي
         ]
       };
     }
 
+    // جلب البيانات بناءً على الفلتر (إذا كان البحث فارغاً يجلب كل شيء تلقائياً)
     const ContentData = await Content.find(filter);
-
-    // حماية قصوى: إذا ما لقى كتب يرجع مصفوفة فاضية [] عشان الـ setContents(data) ما تفرش
-    if (!ContentData || ContentData.length === 0) {
-      return res.json([]); 
-    }
-
     res.json(ContentData);
   } catch (err) {
-    console.error("⚠️ خطأ في البحث:", err.message);
-    res.json([]); // إرجاع مصفوفة فارغة بالخطأ لضمان أمان الواجهة
+    res.status(500).json({ error: err.message });
   }
 });
-
 
 // Create new content item
 app.post('/api/contents', async (req, res) => {
