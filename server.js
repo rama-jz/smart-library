@@ -100,13 +100,12 @@ app.post('/api/users', async (req, res) => {
 
 
 // 🟢 مسار جلب الكتب الصحيح والمعدل لمنع الشاشة البيضاء والتعليق نهائياً
-app.get('/api/contents', async (req, res) => {
+// 🟢 المسار الصحيح والمطابق تماماً لكود الواجهة (React) تبعك
+app.get('/api/contents/search', async (req, res) => {
   try {
-    // لقط كلمة البحث سواء بعتتها الواجهة باسم query أو search لضمان التوافق
-    const searchQuery = req.query.query || req.query.search; 
+    const searchQuery = req.query.query; // لقط المتغير باسم query متل كود الـ fetch بالظبط
     let filter = {};
 
-    // إذا المستخدم كتب أي حرف، بنفتش بجدول الـ Content الكبير
     if (searchQuery) {
       filter = {
         $or: [
@@ -119,7 +118,7 @@ app.get('/api/contents', async (req, res) => {
 
     const ContentData = await Content.find(filter);
 
-    // الحماية القصوى: نضمن دائماً إرجاع مصفوفة حتى لو كانت فارغة عشان الـ .map() بالواجهة ما تفرش
+    // حماية قصوى: إذا ما لقى كتب يرجع مصفوفة فاضية [] عشان الـ setContents(data) ما تفرش
     if (!ContentData || ContentData.length === 0) {
       return res.json([]); 
     }
@@ -127,7 +126,7 @@ app.get('/api/contents', async (req, res) => {
     res.json(ContentData);
   } catch (err) {
     console.error("⚠️ خطأ في البحث:", err.message);
-    res.json([]); // إرجاع مصفوفة فارغة في حال حدوث أي خطأ لمنع انهيار الـ React
+    res.json([]); // إرجاع مصفوفة فارغة بالخطأ لضمان أمان الواجهة
   }
 });
 
