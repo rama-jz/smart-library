@@ -1,3 +1,4 @@
+global.crypto = require('crypto'); // حل مشكلة التشفير للإصدارات القديمة في السيرفر
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
