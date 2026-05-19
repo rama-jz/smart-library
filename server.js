@@ -101,21 +101,38 @@ app.post('/api/users', async (req, res) => {
 
 // Get all content items
 // 🟢 تم التعديل هنا: مسار جلب الكتب المطور الذي يدعم البحث الذكي والعميق لمنع فرشة الكود
+// 🟢 التعديل النهائي والجذري المتوافق مع طلبات الواجهة (React) 100%
 app.get('/api/contents', async (req, res) => {
   try {
-    const { search } = req.query; // لقط كلمة البحث القادمة من الواجهة الأمامية
+    // 1. لقط كلمة البحث سواء بعتتها الواجهة باسم query أو search لضمان الأمان
+    const searchQuery = req.query.query || req.query.search; 
     let filter = {};
 
-    // إذا قامت الواجهة بإرسال نص بداخل خانة البحث، نقوم بتفعيل الفلترة المتقدمة
-    if (search) {
+    // 2. إذا المستخدم كتب أي حرف، بنفتش بجدول الـ Content الكبير
+    if (searchQuery) {
       filter = {
         $or: [
-          { title: { $regex: search, $options: 'i' } },       // البحث بداخل عنوان الكتاب
-          { author: { $regex: search, $options: 'i' } },      // البحث بداخل اسم المؤلف
-          { subCategory: { $regex: search, $options: 'i' } }   // البحث بداخل القسم الفرعي
+          { title: { $regex: searchQuery, $options: 'i' } },    // بحث بالعنوان
+          { author: { $regex: searchQuery, $options: 'i' } },   // بحث بالمؤلف
+          { subCategory: { $regex: searchQuery, $options: 'i' } } // بحث بالقسم
         ]
       };
     }
+
+    const ContentData = await Content.find(filter);
+
+    // 3. الحماية القصوى: نضمن دائماً إرجاع مصفوفة حتى لو كانت فارغة عشان الـ .map() ما تفرش بالواجهة
+    if (!ContentData || ContentData.length === 0) {
+      return res.json([]); // إرجاع مصفوفة فارغة ونظيفة
+    }
+
+    res.json(ContentData);
+  } catch (err) {
+    // حتى في حال حدوث خطأ، بنرجع مصفوفة فارغة عشان الواجهة تضل شقالة وما تظهر شاشة بيضاء
+    console.error("⚠️ خطأ في البحث:", err.message);
+    res.json([]); 
+  }
+});
 
     // جلب البيانات بناءً على الفلتر (إذا كان البحث فارغاً يجلب كل شيء تلقائياً)
     const ContentData = await Content.find(filter);
