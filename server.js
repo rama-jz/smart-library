@@ -100,10 +100,26 @@ app.post('/api/users', async (req, res) => {
 
 
 // Get all content items
+// 🟢 تم التعديل هنا: مسار جلب الكتب المطور الذي يدعم البحث الذكي والعميق لمنع فرشة الكود
 app.get('/api/contents', async (req, res) => {
   try {
-    const contents = await Content.find();
-    res.json(contents);
+    const { search } = req.query; // لقط كلمة البحث القادمة من الواجهة الأمامية
+    let filter = {};
+
+    // إذا قامت الواجهة بإرسال نص بداخل خانة البحث، نقوم بتفعيل الفلترة المتقدمة
+    if (search) {
+      filter = {
+        $or: [
+          { title: { $regex: search, $options: 'i' } },       // البحث بداخل عنوان الكتاب
+          { author: { $regex: search, $options: 'i' } },      // البحث بداخل اسم المؤلف
+          { subCategory: { $regex: search, $options: 'i' } }   // البحث بداخل القسم الفرعي
+        ]
+      };
+    }
+
+    // جلب البيانات بناءً على الفلتر (إذا كان البحث فارغاً يجلب كل شيء تلقائياً)
+    const ContentData = await Content.find(filter);
+    res.json(ContentData);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
