@@ -23,40 +23,36 @@ app.use((req, res, next) => {
 // ==========================================
 app.get('/api/contents', async (req, res) => {
   try {
-    // 1. استقبال معايير البحث المتقدم القادمة من الواجهة (Query Parameters)
+    // 1. هنا نلتقط القيم الثلاثة القادمة من الواجهة (يجب أن تطابق الأسماء في الـ React)
     const { text, category, author } = req.query;
-    let filter = {};
-
-    // 2. تصفية بناءً على النص الكامل (عنوان الكتاب) - بحث جزئي غير حساس لحالة الأحرف
-    if (text) {
-      filter.title = { $regex: text, $options: 'i' };
-    }
-
-    // 3. تصفية بناءً على التصنيف المختار
-    if (category) {
-      filter.subCategory = { $regex: category, $options: 'i' };
-    }
-
-    // 4. تصفية بناءً على اسم المؤلف - بحث جزئي غير حساس لحالة الأحرف
-    if (author) {
-      filter.author = { $regex: author, $options: 'i' };
-    }
-
-    // طباعة الفلتر في الـ Console للتأكد من عمله أثناء فحص الدكتورة
-    console.log("🔍 Active Search Filter applied:", filter);
-
-    // 5. تنفيذ الاستعلام الدقيق داخل قاعدة البيانات
-    const contents = await Content.find(filter);
     
-    // إرسال النتائج، أو مصفوفة فارغة في حال عدم وجود تطابق لضمان سلامة الواجهة
+    let filter = {}; // هذا الصندوق الذي سنجمع فيه شروط البحث
+
+    // 2. إذا المستخدم كتب شيء في خانة النص (العنوان)
+    if (text) {
+      filter.title = { $regex: text, $options: 'i' }; // ابحث في حقل title
+    }
+
+    // 3. إذا المستخدم اختار قسم معين
+    if (category) {
+      filter.subCategory = { $regex: category, $options: 'i' }; // ابحث في حقل subCategory
+    }
+
+    // 4. إذا المستخدم كتب اسم مؤلف
+    if (author) {
+      filter.author = { $regex: author, $options: 'i' }; // ابحث في حقل author
+    }
+
+    // 🔥 خطوتك السحرية لمعرفة الخطأ:
+    console.log("المرشحات النشطة حالياً في السيرفر:", filter);
+
+    const contents = await Content.find(filter);
     res.json(contents || []);
 
   } catch (err) {
-    console.error("⚠️ خطأ في البحث المتقدم:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 // Database connection
 const mongoURI = process.env.MONGODB_URI || 'mongodb://database:27017/SmartDigitalLibrary';
 mongoose.connect(mongoURI)
