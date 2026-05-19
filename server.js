@@ -22,10 +22,10 @@ app.get('/test', (req, res) => {
 });
 
 // Database connection
-mongoose.connect('mongodb://database:27017/SmartDigitalLibrary')
-  .then(() => console.log('Connected to SmartDigitalLibrary database'))
+const mongoURI = process.env.MONGODB_URI || 'mongodb://database:27017/SmartDigitalLibrary';
+mongoose.connect(mongoURI)
+  .then(() => console.log('Connected to SmartDigitalLibrary database successfully!'))
   .catch(err => console.error('Database connection failed:', err));
-
 
 // Models
 
