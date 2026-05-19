@@ -99,16 +99,14 @@ app.post('/api/users', async (req, res) => {
 });
 
 
-// Get all content items
-// 🟢 تم التعديل هنا: مسار جلب الكتب المطور الذي يدعم البحث الذكي والعميق لمنع فرشة الكود
-// 🟢 التعديل النهائي والجذري المتوافق مع طلبات الواجهة (React) 100%
+// 🟢 مسار جلب الكتب الصحيح والمعدل لمنع الشاشة البيضاء والتعليق نهائياً
 app.get('/api/contents', async (req, res) => {
   try {
-    // 1. لقط كلمة البحث سواء بعتتها الواجهة باسم query أو search لضمان الأمان
+    // لقط كلمة البحث سواء بعتتها الواجهة باسم query أو search لضمان التوافق
     const searchQuery = req.query.query || req.query.search; 
     let filter = {};
 
-    // 2. إذا المستخدم كتب أي حرف، بنفتش بجدول الـ Content الكبير
+    // إذا المستخدم كتب أي حرف، بنفتش بجدول الـ Content الكبير
     if (searchQuery) {
       filter = {
         $or: [
@@ -121,26 +119,18 @@ app.get('/api/contents', async (req, res) => {
 
     const ContentData = await Content.find(filter);
 
-    // 3. الحماية القصوى: نضمن دائماً إرجاع مصفوفة حتى لو كانت فارغة عشان الـ .map() ما تفرش بالواجهة
+    // الحماية القصوى: نضمن دائماً إرجاع مصفوفة حتى لو كانت فارغة عشان الـ .map() بالواجهة ما تفرش
     if (!ContentData || ContentData.length === 0) {
-      return res.json([]); // إرجاع مصفوفة فارغة ونظيفة
+      return res.json([]); 
     }
 
     res.json(ContentData);
   } catch (err) {
-    // حتى في حال حدوث خطأ، بنرجع مصفوفة فارغة عشان الواجهة تضل شقالة وما تظهر شاشة بيضاء
     console.error("⚠️ خطأ في البحث:", err.message);
-    res.json([]); 
+    res.json([]); // إرجاع مصفوفة فارغة في حال حدوث أي خطأ لمنع انهيار الـ React
   }
 });
 
-    // جلب البيانات بناءً على الفلتر (إذا كان البحث فارغاً يجلب كل شيء تلقائياً)
-    const ContentData = await Content.find(filter);
-    res.json(ContentData);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Create new content item
 app.post('/api/contents', async (req, res) => {
