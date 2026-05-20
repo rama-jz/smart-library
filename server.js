@@ -1,10 +1,8 @@
-global.crypto = require('crypto');
+global.crypto = require('crypto'); // حل مشكلة التشفير للإصدارات القديمة في السيرفر
 
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
 
 const app = express();
 
@@ -14,172 +12,216 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// مهم جداً
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+// Request logging
 app.use((req, res, next) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
 });
 
 // =======================
-// MongoDB
+// MongoDB Connection
 // =======================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/SmartDigitalLibrary')
-  .then(() => console.log('DB Connected'))
-  .catch(err => console.error(err));
+const mongoURI =
+  process.env.MONGODB_URI ||
+  'mongodb://database:27017/SmartDigitalLibrary';
+
+mongoose
+  .connect(mongoURI)
+  .then(() => console.log('Connected to SmartDigitalLibrary database successfully!'))
+  .catch(err => console.error('Database connection failed:', err));
 
 // =======================
 // MODELS
 // =======================
 
-const User = mongoose.model('User', new mongoose.Schema({
-  username: String,
-  role: { type: String, default: 'Reader' },
-  active: { type: Boolean, default: true }
-}), 'Users');
+const User = mongoose.model(
+  'User',
+  new mongoose.Schema(
+    {
+      username: { type: String, required: true },
+      role: { type: String, default: 'Reader' },
+      active: { type: Boolean, default: true }
+    },
+    { collection: 'Users' }
+  )
+);
 
-const Content = mongoose.model('Content', new mongoose.Schema({
-  title: String,
-  author: String,
-  subCategory: String,
+const Content = mongoose.model(
+  'Content',
+  new mongoose.Schema(
+    {
+      title: { type: String, required: true },
+      author: { type: String, required: true },
+      subCategory: String,
 
-  fileType: { type: String, enum: ['PDF', 'Image', 'Audio'] },
-  fileUrl: String,
+      file_type: { type: String, default: 'PDF' },
+      fileUrl: { type: String, default: '' },   // 🔥 مهم جداً
+      image: { type: String, default: '' },
 
-  image: String,
-  operator: String,
-  createdAt: { type: Date, default: Date.now }
-}), 'Content');
+      operator: String
+    },
+    { collection: 'Content' }
+  )
+);
 
-const Log = mongoose.model('Log', new mongoose.Schema({
-  userId: String,
-  action: String,
-  details: String,
-  ipAddress: String,
-  timestamp: { type: Date, default: Date.now }
-}), 'activity_logs');
-
-// =======================
-// ROLE MIDDLEWARE (FIXED)
-// =======================
-const allowRoles = (roles) => (req, res, next) => {
-  const role = req.headers.role || 'Reader';
-
-  if (!roles.includes(role)) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  req.userRole = role;
-  next();
-};
-
-// =======================
-// MULTER CONFIG
-// =======================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
-  }
-});
-
-const upload = multer({ storage });
+const Log = mongoose.model(
+  'Log',
+  new mongoose.Schema(
+    {
+      userId: { type: String, default: 'System' },
+      action: { type: String, required: true },
+      details: { type: String, required: true },
+      ipAddress: { type: String, default: '127.0.0.1' },
+      timestamp: { type: Date, default: Date.now }
+    },
+    { collection: 'activity_logs' }
+  )
+);
 
 // =======================
-// USERS
+// USERS ROUTES
 // =======================
 
 app.get('/api/users', async (req, res) => {
-  const users = await User.find();
-  res.json(users);
+  try {
+    const users = await User.find();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/users', allowRoles(['Admin']), async (req, res) => {
-  const user = new User(req.body);
-  await user.save();
-  res.json(user);
+app.post('/api/users', async (req, res) => {
+  try {
+    const { username, role } = req.body;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const newUser = new User({ username, role });
+    await newUser.save();
+
+    await new Log({
+      userId: username,
+      action: 'CREATE_USER',
+      details: `New user created: ${username} with role ${role}`
+    }).save();
+
+    res.status(201).json(newUser);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save user' });
+  }
 });
 
 // =======================
-// CONTENTS
+// CONTENTS ROUTE (FIXED - NO DUPLICATION)
 // =======================
 
 app.get('/api/contents', async (req, res) => {
-  const { query } = req.query;
+  try {
+    const { search, text, category, author } = req.query;
 
-  let filter = {};
+    let filter = {};
 
-  if (query) {
-    filter.$or = [
-      { title: { $regex: query, $options: 'i' } },
-      { author: { $regex: query, $options: 'i' } },
-      { subCategory: { $regex: query, $options: 'i' } }
-    ];
+    const queryText = search || text;
+
+    if (queryText) {
+      filter.$or = [
+        { title: { $regex: queryText, $options: 'i' } },
+        { author: { $regex: queryText, $options: 'i' } },
+        { subCategory: { $regex: queryText, $options: 'i' } }
+      ];
+    }
+
+    if (category) {
+      filter.subCategory = { $regex: category, $options: 'i' };
+    }
+
+    if (author) {
+      filter.author = { $regex: author, $options: 'i' };
+    }
+
+    console.log('FILTER:', filter);
+
+    const contents = await Content.find(filter).sort({ createdAt: -1 });
+    res.json(contents || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  const data = await Content.find(filter).sort({ createdAt: -1 });
-  res.json(data);
 });
 
 // =======================
-// UPLOAD CONTENT (FIXED)
+// CREATE CONTENT (FIXED)
 // =======================
-app.post(
-  '/api/contents',
-  allowRoles(['Admin', 'Uploader']),
-  upload.single('file'),
-  async (req, res) => {
-    try {
-      const {
-        title,
-        author,
-        subCategory,
-        file_type,
-        image,
-        operator
-      } = req.body;
 
-      const fileUrl = req.file
-        ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
-        : "";
+app.post('/api/contents', async (req, res) => {
+  try {
+    const {
+      title,
+      author,
+      subCategory,
+      file_type,
+      image,
+      operator,
+      fileUrl
+    } = req.body;
 
-      const content = new Content({
-        title,
-        author,
-        subCategory,
-        fileType: file_type,
-        fileUrl,
-        image,
-        operator
-      });
+    const newContent = new Content({
+      title: title || 'Untitled',
+      author: author || 'Unknown',
+      subCategory: subCategory || 'General',
+      file_type: file_type || 'PDF',
+      image: image || '',
+      operator: operator || 'Admin',
+      fileUrl: fileUrl || '' // 🔥 مهم
+    });
 
-      await content.save();
+    await newContent.save();
 
-      await new Log({
-        userId: operator || "system",
-        action: "CREATE_CONTENT",
-        details: `Uploaded ${file_type}: ${title}`,
-        ipAddress: req.ip
-      }).save();
+    await new Log({
+      userId: operator || 'Admin',
+      action: 'CREATE_CONTENT',
+      details: `New content added: ${title || 'Document'}`
+    }).save();
 
-      res.json(content);
-
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
+    res.status(201).json(newContent);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save content' });
   }
-);
+});
 
 // =======================
 // LOGS
 // =======================
+
 app.get('/api/logs', async (req, res) => {
-  const logs = await Log.find().sort({ timestamp: -1 });
-  res.json(logs);
+  try {
+    const logs = await Log.find().sort({ timestamp: -1 });
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // =======================
-app.listen(5000, () => console.log("Server running on 5000"));
+// 404
+// =======================
+
+app.use((req, res) => {
+  console.log(`404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({
+    error: 'Route not found',
+    path: req.url
+  });
+});
+
+// =======================
+// SERVER START
+// =======================
+
+const PORT = 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
