@@ -1,216 +1,185 @@
-global.crypto = require('crypto'); // حل مشكلة التشفير للإصدارات القديمة في السيرفر
+global.crypto = require('crypto');
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 
-
+// =======================
 // Middleware
-
+// =======================
 app.use(cors());
-app.use(express.json()); // Parse incoming JSON requests
+app.use(express.json());
 
-// Request logging middleware for debugging and monitoring
+// مهم جداً
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 app.use((req, res, next) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Health check route
-// ==========================================
-// 🟢 مسار جلب الكتب المطور: يدعم البحث المتقدم والمفصل
-// ==========================================
-app.get('/api/contents', async (req, res) => {
-  try {
-    // 1. هنا نلتقط القيم الثلاثة القادمة من الواجهة (يجب أن تطابق الأسماء في الـ React)
-    const { text, category, author } = req.query;
-    
-    let filter = {}; // هذا الصندوق الذي سنجمع فيه شروط البحث
+// =======================
+// MongoDB
+// =======================
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/SmartDigitalLibrary')
+  .then(() => console.log('DB Connected'))
+  .catch(err => console.error(err));
 
-    // 2. إذا المستخدم كتب شيء في خانة النص (العنوان)
-    if (text) {
-      filter.title = { $regex: text, $options: 'i' }; // ابحث في حقل title
-    }
+// =======================
+// MODELS
+// =======================
 
-    // 3. إذا المستخدم اختار قسم معين
-    if (category) {
-      filter.subCategory = { $regex: category, $options: 'i' }; // ابحث في حقل subCategory
-    }
-
-    // 4. إذا المستخدم كتب اسم مؤلف
-    if (author) {
-      filter.author = { $regex: author, $options: 'i' }; // ابحث في حقل author
-    }
-
-    // 🔥 خطوتك السحرية لمعرفة الخطأ:
-    console.log("المرشحات النشطة حالياً في السيرفر:", filter);
-
-    const contents = await Content.find(filter);
-    res.json(contents || []);
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// Database connection
-const mongoURI = process.env.MONGODB_URI || 'mongodb://database:27017/SmartDigitalLibrary';
-mongoose.connect(mongoURI)
-  .then(() => console.log('Connected to SmartDigitalLibrary database successfully!'))
-  .catch(err => console.error('Database connection failed:', err));
-
-// Models
-
-
-// User model mapped to Users collection
 const User = mongoose.model('User', new mongoose.Schema({
-  username: { type: String, required: true },
+  username: String,
   role: { type: String, default: 'Reader' },
   active: { type: Boolean, default: true }
 }), 'Users');
 
-// Content model mapped to Content collection
 const Content = mongoose.model('Content', new mongoose.Schema({
-  title: { type: String, required: true },
-  author: { type: String, required: true },
+  title: String,
+  author: String,
   subCategory: String,
-  file_type: { type: String, default: 'PDF' },
-  image: { type: String, default: '' }, // Cover image URL or path
-  operator: String
+
+  fileType: { type: String, enum: ['PDF', 'Image', 'Audio'] },
+  fileUrl: String,
+
+  image: String,
+  operator: String,
+  createdAt: { type: Date, default: Date.now }
 }), 'Content');
 
-// Activity logs model mapped to activity_logs collection
 const Log = mongoose.model('Log', new mongoose.Schema({
-  userId: { type: String, default: 'System' },
-  action: { type: String, required: true },
-  details: { type: String, required: true },
-  ipAddress: { type: String, default: '127.0.0.1' },
+  userId: String,
+  action: String,
+  details: String,
+  ipAddress: String,
   timestamp: { type: Date, default: Date.now }
 }), 'activity_logs');
 
+// =======================
+// ROLE MIDDLEWARE (FIXED)
+// =======================
+const allowRoles = (roles) => (req, res, next) => {
+  const role = req.headers.role || 'Reader';
 
+  if (!roles.includes(role)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
-// Routes
+  req.userRole = role;
+  next();
+};
 
+// =======================
+// MULTER CONFIG
+// =======================
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
 
-// Get all users
+const upload = multer({ storage });
+
+// =======================
+// USERS
+// =======================
+
 app.get('/api/users', async (req, res) => {
-  try {
-    const users = await User.find();
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const users = await User.find();
+  res.json(users);
 });
 
-// Create a new user
-app.post('/api/users', async (req, res) => {
-  try {
-    const { username, role } = req.body;
-
-    if (!username) {
-      return res.status(400).json({ error: "Username is required" });
-    }
-
-    const newUser = new User({ username, role });
-    await newUser.save();
-
-    // Log user creation event
-    const newLog = new Log({
-      userId: username,
-      action: "CREATE_USER",
-      details: `New user created: ${username} with role ${role}`
-    });
-    await newLog.save();
-
-    res.status(201).json(newUser);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to save user" });
-  }
+app.post('/api/users', allowRoles(['Admin']), async (req, res) => {
+  const user = new User(req.body);
+  await user.save();
+  res.json(user);
 });
 
+// =======================
+// CONTENTS
+// =======================
 
-// Get all content items
-// 🟢 تم التعديل هنا: مسار جلب الكتب المطور الذي يدعم البحث الذكي والعميق لمنع فرشة الكود
 app.get('/api/contents', async (req, res) => {
-  try {
-    const { search } = req.query; // لقط كلمة البحث القادمة من الواجهة الأمامية
-    let filter = {};
+  const { query } = req.query;
 
-    // إذا قامت الواجهة بإرسال نص بداخل خانة البحث، نقوم بتفعيل الفلترة المتقدمة
-    if (search) {
-      filter = {
-        $or: [
-          { title: { $regex: search, $options: 'i' } },       // البحث بداخل عنوان الكتاب
-          { author: { $regex: search, $options: 'i' } },      // البحث بداخل اسم المؤلف
-          { subCategory: { $regex: search, $options: 'i' } }   // البحث بداخل القسم الفرعي
-        ]
-      };
+  let filter = {};
+
+  if (query) {
+    filter.$or = [
+      { title: { $regex: query, $options: 'i' } },
+      { author: { $regex: query, $options: 'i' } },
+      { subCategory: { $regex: query, $options: 'i' } }
+    ];
+  }
+
+  const data = await Content.find(filter).sort({ createdAt: -1 });
+  res.json(data);
+});
+
+// =======================
+// UPLOAD CONTENT (FIXED)
+// =======================
+app.post(
+  '/api/contents',
+  allowRoles(['Admin', 'Uploader']),
+  upload.single('file'),
+  async (req, res) => {
+    try {
+      const {
+        title,
+        author,
+        subCategory,
+        file_type,
+        image,
+        operator
+      } = req.body;
+
+      const fileUrl = req.file
+        ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
+        : "";
+
+      const content = new Content({
+        title,
+        author,
+        subCategory,
+        fileType: file_type,
+        fileUrl,
+        image,
+        operator
+      });
+
+      await content.save();
+
+      await new Log({
+        userId: operator || "system",
+        action: "CREATE_CONTENT",
+        details: `Uploaded ${file_type}: ${title}`,
+        ipAddress: req.ip
+      }).save();
+
+      res.json(content);
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
-
-    // جلب البيانات بناءً على الفلتر (إذا كان البحث فارغاً يجلب كل شيء تلقائياً)
-    const ContentData = await Content.find(filter);
-    res.json(ContentData);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
-// Create new content item
-app.post('/api/contents', async (req, res) => {
-  try {
-    const { title, author, subCategory, file_type, image, operator } = req.body;
-
-    const newContent = new Content({
-      title: title || "Untitled",
-      author: author || "Unknown",
-      subCategory: subCategory || "General",
-      file_type: file_type || "PDF",
-      image: image || "",
-      operator: operator || "Admin"
-    });
-
-    await newContent.save();
-
-    // Log content creation event
-    const newLog = new Log({
-      userId: operator || "Admin",
-      action: "CREATE_CONTENT",
-      details: `New content added: ${title || "Document"}`
-    });
-    await newLog.save();
-
-    res.status(201).json(newContent);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to save content" });
-  }
-});
-
-
-// Get activity logs
+// =======================
+// LOGS
+// =======================
 app.get('/api/logs', async (req, res) => {
-  try {
-    const logs = await Log.find().sort({ timestamp: -1 });
-    res.json(logs);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const logs = await Log.find().sort({ timestamp: -1 });
+  res.json(logs);
 });
 
-
-// 404 handler
-app.use((req, res) => {
-  console.log(`404 Not Found: ${req.method} ${req.url}`);
-  res.status(404).json({
-    error: "Route not found",
-    path: req.url
-  });
-});
-
-
-// Server startup
-const PORT = 5000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+// =======================
+app.listen(5000, () => console.log("Server running on 5000"));
