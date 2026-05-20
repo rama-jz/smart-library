@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+
 const multer = require('multer');
 const path = require('path');
 
@@ -16,6 +17,7 @@ global.crypto = require('crypto');
 // =======================
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // static files (uploads)
 app.use('/uploads', express.static('uploads'));
@@ -105,16 +107,28 @@ const upload = multer({ storage });
 // =======================
 // UPLOAD ROUTE
 // =======================
-app.post('/api/upload', upload.single('file'), (req, res) => {
+app.post('/api/contents', async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    const body = req.body || {}; // 🔥 حماية من undefined
 
-    res.json({
-      fileUrl: `/uploads/${req.file.filename}`
+    console.log("📦 BODY RECEIVED:", body);
+
+    const newContent = new Content({
+      title: body.title || 'Untitled',
+      author: body.author || 'Unknown',
+      subCategory: body.subCategory || '',
+      file_type: body.file_type || 'PDF',
+      image: body.image || '',
+      fileUrl: body.fileUrl || '',
+      operator: body.operator || 'Admin'
     });
+
+    const saved = await newContent.save();
+
+    res.status(201).json(saved);
+
   } catch (err) {
+    console.error("❌ ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
