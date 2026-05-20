@@ -1,9 +1,9 @@
-global.crypto = require('crypto'); // حل مشكلة التشفير للإصدارات القديمة في السيرفر
+global.crypto = require('crypto'); // حل مشكلة التشفير في بعض السيرفرات
 
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const multer = require('multer'); // 🔥 لرفع الملفات
+const multer = require('multer'); // 🔥 رفع ملفات
 const app = express();
 
 // =======================
@@ -12,9 +12,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🔥 تفعيل عرض الملفات المرفوعة
 app.use('/uploads', express.static('uploads'));
 
-// Request logging
+// Logging
 app.use((req, res, next) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
@@ -36,6 +37,7 @@ mongoose
 // MODELS
 // =======================
 
+// Users
 const User = mongoose.model(
   'User',
   new mongoose.Schema(
@@ -48,6 +50,7 @@ const User = mongoose.model(
   )
 );
 
+// Content
 const Content = mongoose.model(
   'Content',
   new mongoose.Schema(
@@ -57,17 +60,19 @@ const Content = mongoose.model(
       subCategory: String,
 
       file_type: { type: String, default: 'PDF' },
-      fileUrl: { type: String, default: '' },   // 🔥 مهم جداً
+      fileUrl: { type: String, default: '' }, // 🔥 ملف PDF / Audio
+
       image: { type: String, default: '' },
 
-      operator: String
-            createdAt: { type: Date, default: Date.now } // 🔥 مهم للترتيب
+      operator: String,
 
+      createdAt: { type: Date, default: Date.now } // 🔥 مهم للترتيب
     },
     { collection: 'Content' }
   )
 );
 
+// Logs
 const Log = mongoose.model(
   'Log',
   new mongoose.Schema(
@@ -83,9 +88,24 @@ const Log = mongoose.model(
 );
 
 // =======================
-// USERS ROUTES
+// MULTER CONFIG (UPLOAD FIX)
+// =======================
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+
+const upload = multer({ storage });
+
+// =======================
+// USERS API
 // =======================
 
+// get users
 app.get('/api/users', async (req, res) => {
   try {
     const users = await User.find();
@@ -95,6 +115,7 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+// create user
 app.post('/api/users', async (req, res) => {
   try {
     const { username, role } = req.body;
@@ -119,16 +140,15 @@ app.post('/api/users', async (req, res) => {
 });
 
 // =======================
-// CONTENTS ROUTE (FIXED - NO DUPLICATION)
+// CONTENTS (SEARCH)
 // =======================
-
 app.get('/api/contents', async (req, res) => {
   try {
     const { search, text, category, author } = req.query;
 
-    let filter = {};
-
     const queryText = search || text;
+
+    let filter = {};
 
     if (queryText) {
       filter.$or = [
@@ -146,8 +166,6 @@ app.get('/api/contents', async (req, res) => {
       filter.author = { $regex: author, $options: 'i' };
     }
 
-    console.log('FILTER:', filter);
-
     const contents = await Content.find(filter).sort({ createdAt: -1 });
     res.json(contents || []);
   } catch (err) {
@@ -156,10 +174,9 @@ app.get('/api/contents', async (req, res) => {
 });
 
 // =======================
-// CREATE CONTENT (FIXED)
+// CONTENT UPLOAD + CREATE
 // =======================
-
-app.post('/api/contents', async (req, res) => {
+app.post('/api/contents', upload.single('file'), async (req, res) => {
   try {
     const {
       title,
@@ -167,9 +184,11 @@ app.post('/api/contents', async (req, res) => {
       subCategory,
       file_type,
       image,
-      operator,
-      fileUrl
+      operator
     } = req.body;
+
+    // 🔥 رابط الملف بعد الرفع
+    const fileUrl = req.file ? `/uploads/${req.file.filename}` : '';
 
     const newContent = new Content({
       title: title || 'Untitled',
@@ -178,7 +197,7 @@ app.post('/api/contents', async (req, res) => {
       file_type: file_type || 'PDF',
       image: image || '',
       operator: operator || 'Admin',
-      fileUrl: fileUrl || '' // 🔥 مهم
+      fileUrl
     });
 
     await newContent.save();
@@ -186,7 +205,7 @@ app.post('/api/contents', async (req, res) => {
     await new Log({
       userId: operator || 'Admin',
       action: 'CREATE_CONTENT',
-      details: `New content added: ${title || 'Document'}`
+      details: `Uploaded content: ${title || 'Document'}`
     }).save();
 
     res.status(201).json(newContent);
@@ -198,7 +217,6 @@ app.post('/api/contents', async (req, res) => {
 // =======================
 // LOGS
 // =======================
-
 app.get('/api/logs', async (req, res) => {
   try {
     const logs = await Log.find().sort({ timestamp: -1 });
@@ -209,11 +227,9 @@ app.get('/api/logs', async (req, res) => {
 });
 
 // =======================
-// 404
+// 404 HANDLER
 // =======================
-
 app.use((req, res) => {
-  console.log(`404 Not Found: ${req.method} ${req.url}`);
   res.status(404).json({
     error: 'Route not found',
     path: req.url
@@ -221,9 +237,8 @@ app.use((req, res) => {
 });
 
 // =======================
-// SERVER START
+// START SERVER
 // =======================
-
 const PORT = 5000;
 
 app.listen(PORT, () => {
