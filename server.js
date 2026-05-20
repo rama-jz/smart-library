@@ -3,7 +3,7 @@ global.crypto = require('crypto'); // حل مشكلة التشفير في بعض
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const multer = require('multer'); // 🔥 رفع ملفات
+const multer = require('multer');  
 const app = express();
 
 // =======================
