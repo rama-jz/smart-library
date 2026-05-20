@@ -15,7 +15,11 @@ global.crypto = require('crypto');
 // =======================
 // MIDDLEWARE
 // =======================
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
 app.use(express.json());
 
 // =======================
@@ -27,7 +31,13 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-app.use('/uploads', express.static(uploadDir));
+// إضافة headers للسماح بالتنزيل
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Content-Disposition', 'attachment');
+  next();
+}, express.static(uploadDir));
 
 // =======================
 // LOG REQUESTS
@@ -113,13 +123,19 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const baseUrl = process.env.BASE_URL || `https://${req.get('host')}`;
+    // استخدام الرابط الكامل من البيئة أو بناءه من الطلب
+    const baseUrl = process.env.BASE_URL || 'https://smart-library-c6ne.onrender.com';
+
+    const fileUrl = `${baseUrl}/uploads/${req.file.filename}`;
+    
+    console.log('✅ File uploaded:', fileUrl);
 
     res.json({
-      fileUrl: `${baseUrl}/uploads/${req.file.filename}`
+      fileUrl: fileUrl,
+      filename: req.file.filename
     });
   } catch (err) {
-    console.error(err);
+    console.error('❌ Upload error:', err);
     res.status(500).json({ error: err.message });
   }
 });
