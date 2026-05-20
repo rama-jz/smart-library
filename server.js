@@ -1,14 +1,14 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 
 // =======================
-// FIX (for some servers)
+// FIX
 // =======================
 global.crypto = require('crypto');
 
@@ -17,12 +17,21 @@ global.crypto = require('crypto');
 // =======================
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// static files (uploads)
-app.use('/uploads', express.static('uploads'));
+// =======================
+// UPLOADS FOLDER FIX (IMPORTANT)
+// =======================
+const uploadDir = path.join(__dirname, 'uploads');
 
-// logger
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+app.use('/uploads', express.static(uploadDir));
+
+// =======================
+// LOG REQUESTS
+// =======================
 app.use((req, res, next) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
@@ -54,25 +63,16 @@ const User = mongoose.model(
   'Users'
 );
 
-// ⚠️ ما غيرنا اسم collection مثل ما طلبت
 const Content = mongoose.model(
   'Content',
   new mongoose.Schema({
     title: { type: String, required: true },
     author: { type: String, required: true },
-
-    // ✅ FIX 1: أضف categoryId (مهم لو موجود بالداتابيس)
-    categoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: false
-    },
-
     subCategory: String,
     file_type: { type: String, default: 'PDF' },
     image: { type: String, default: '' },
     fileUrl: { type: String, default: '' },
     operator: String,
-
     createdAt: { type: Date, default: Date.now }
   }),
   'Content'
@@ -91,11 +91,11 @@ const Log = mongoose.model(
 );
 
 // =======================
-// UPLOAD CONFIG
+// MULTER CONFIG
 // =======================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + '-' + file.originalname);
@@ -105,30 +105,21 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // =======================
-// UPLOAD ROUTE
+// UPLOAD ROUTE (FIXED URL)
 // =======================
-app.post('/api/contents', async (req, res) => {
+app.post('/api/upload', upload.single('file'), (req, res) => {
   try {
-    const body = req.body || {}; // 🔥 حماية من undefined
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
 
-    console.log("📦 BODY RECEIVED:", body);
+    const baseUrl = process.env.BASE_URL || `https://${req.get('host')}`;
 
-    const newContent = new Content({
-      title: body.title || 'Untitled',
-      author: body.author || 'Unknown',
-      subCategory: body.subCategory || '',
-      file_type: body.file_type || 'PDF',
-      image: body.image || '',
-      fileUrl: body.fileUrl || '',
-      operator: body.operator || 'Admin'
+    res.json({
+      fileUrl: `${baseUrl}/uploads/${req.file.filename}`
     });
-
-    const saved = await newContent.save();
-
-    res.status(201).json(saved);
-
   } catch (err) {
-    console.error("❌ ERROR:", err);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -161,12 +152,11 @@ app.post('/api/users', async (req, res) => {
 });
 
 // =======================
-// CONTENTS
+// CONTENTS (FIXED SAFE)
 // =======================
 app.get('/api/contents', async (req, res) => {
   try {
-    const queryText =
-      req.query.query || req.query.search || req.query.text || '';
+    const queryText = req.query.query || '';
 
     let filter = {};
 
@@ -180,40 +170,42 @@ app.get('/api/contents', async (req, res) => {
 
     const data = await Content.find(filter).sort({ createdAt: -1 });
     res.json(data);
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // =======================
-// CREATE CONTENT (FIX 2 مهم جداً)
+// CREATE CONTENT (FIXED 100%)
 // =======================
 app.post('/api/contents', async (req, res) => {
   try {
-    console.log("📦 BODY RECEIVED:", req.body);
+    const body = req.body || {};
 
     const newContent = new Content({
-      title: req.body.title || 'Untitled',
-      author: req.body.author || 'Unknown',
-      subCategory: req.body.subCategory || 'General',
-      file_type: req.body.file_type || 'PDF',
-      image: req.body.image || '',
-      fileUrl: req.body.fileUrl || '',
-      operator: req.body.operator || 'Admin'
+      title: body.title || 'Untitled',
+      author: body.author || 'Unknown',
+      subCategory: body.subCategory || 'General',
+      file_type: body.file_type || 'PDF',
+      image: body.image || '',
+      fileUrl: body.fileUrl || '',
+      operator: body.operator || 'Admin'
     });
 
     await newContent.save();
 
     await new Log({
-      userId: req.body.operator || 'Admin',
+      userId: body.operator || 'Admin',
       action: 'CREATE_CONTENT',
-      details: `Added content: ${req.body.title}`
+      details: `Added content: ${body.title || 'Untitled'}`
     }).save();
 
     res.status(201).json(newContent);
 
   } catch (err) {
-    console.error("❌ CREATE CONTENT ERROR:", err);
+    console.error("CREATE CONTENT ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -237,7 +229,7 @@ app.use((req, res) => {
 });
 
 // =======================
-// START SERVER
+// START
 // =======================
 const PORT = process.env.PORT || 5000;
 
