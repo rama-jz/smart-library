@@ -52,16 +52,25 @@ const User = mongoose.model(
   'Users'
 );
 
+// ⚠️ ما غيرنا اسم collection مثل ما طلبت
 const Content = mongoose.model(
   'Content',
   new mongoose.Schema({
     title: { type: String, required: true },
     author: { type: String, required: true },
+
+    // ✅ FIX 1: أضف categoryId (مهم لو موجود بالداتابيس)
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: false
+    },
+
     subCategory: String,
     file_type: { type: String, default: 'PDF' },
     image: { type: String, default: '' },
     fileUrl: { type: String, default: '' },
     operator: String,
+
     createdAt: { type: Date, default: Date.now }
   }),
   'Content'
@@ -138,7 +147,7 @@ app.post('/api/users', async (req, res) => {
 });
 
 // =======================
-// CONTENTS (SEARCH FIXED)
+// CONTENTS
 // =======================
 app.get('/api/contents', async (req, res) => {
   try {
@@ -163,40 +172,34 @@ app.get('/api/contents', async (req, res) => {
 });
 
 // =======================
-// CREATE CONTENT
+// CREATE CONTENT (FIX 2 مهم جداً)
 // =======================
 app.post('/api/contents', async (req, res) => {
   try {
-    const {
-      title,
-      author,
-      subCategory,
-      file_type,
-      image,
-      operator,
-      fileUrl
-    } = req.body;
+    console.log("📦 BODY RECEIVED:", req.body);
 
     const newContent = new Content({
-      title: title || 'Untitled',
-      author: author || 'Unknown',
-      subCategory: subCategory || 'General',
-      file_type: file_type || 'PDF',
-      image: image || '',
-      fileUrl: fileUrl || '',
-      operator: operator || 'Admin'
+      title: req.body.title || 'Untitled',
+      author: req.body.author || 'Unknown',
+      subCategory: req.body.subCategory || 'General',
+      file_type: req.body.file_type || 'PDF',
+      image: req.body.image || '',
+      fileUrl: req.body.fileUrl || '',
+      operator: req.body.operator || 'Admin'
     });
 
     await newContent.save();
 
     await new Log({
-      userId: operator || 'Admin',
+      userId: req.body.operator || 'Admin',
       action: 'CREATE_CONTENT',
-      details: `Added content: ${title}`
+      details: `Added content: ${req.body.title}`
     }).save();
 
     res.status(201).json(newContent);
+
   } catch (err) {
+    console.error("❌ CREATE CONTENT ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
